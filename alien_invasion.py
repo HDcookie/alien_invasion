@@ -4,12 +4,13 @@ from time import sleep
 
 import pygame
 
-from alien import Alien
 from bullet import Bullet
 from settings import Settings
 from ship import Ship
 from alien import Alien
 from game_stats import GameStats
+from button import Button
+from scoreboard import Scoreboard
 
 
 class AlienInvasion:
@@ -17,8 +18,6 @@ class AlienInvasion:
 
     def __init__(self):
         """Initialize the game, and create game resources"""
-
-        self.game_active = True
 
         pygame.init()
         self.settings = Settings()
@@ -30,8 +29,11 @@ class AlienInvasion:
         pygame.display.set_caption("Alien Invasion")
 
         self.stats = GameStats(self)
+        self.sb = Scoreboard(self)
         self.ship = Ship(self)
         self.bullets = pygame.sprite.Group()
+
+        self.game_active = self.stats.game_active
 
         self.create_fleet(self)
 
@@ -39,12 +41,15 @@ class AlienInvasion:
         self.bg_image = pygame.image.load('images/background.bmp')
         self.screen.blit(self.bg_image, (0, 0))
 
+        # Make the Play button
+        self.play_button = Button(self, "Play")
+
     def run_game(self):
         """Start the main loop for the game"""
         while True:
             self._check_events()
 
-            if self.game_active:
+            if self.stats.game_active:
                 self.ship.update()
                 self._update_bullets()
                 self._update_aliens()
@@ -61,6 +66,9 @@ class AlienInvasion:
                 self._check_keydown_events(event)
             elif event.type == pygame.KEYUP:
                 self._check_keyup_events(event)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                mouse_pos = pygame.mouse.get_pos()
+                self._check_play_button(mouse_pos)
 
     def _check_keydown_events(self, event):
         """Respond to key presses"""
@@ -92,6 +100,12 @@ class AlienInvasion:
             bullet.draw_bullet()  # type: ignore
         self.aliens.draw(self.screen)
 
+        if not self.stats.game_active:
+            self.play_button.draw_button()
+
+        # Draw the score information
+        self.sb.show_score()
+
         # Make the most recently drawn screen visible
         pygame.display.flip()
 
@@ -122,6 +136,20 @@ class AlienInvasion:
             # Destroy existing bullets and create new fleet
             self.bullets.empty()
             self.create_fleet(self)
+            self.settings.increase_speed()
+
+            # Increase level
+            self.stats.level += 1
+            self.sb.prep_level()
+
+        if collisions:
+            for aliens in collisions.values():
+                self.stats.score += self.settings.alien_points * len(aliens)
+            self.sb.prep_score()
+            self.sb.check_high_score()
+            self.sb.prep_level()
+            self.sb.prep_ships()
+
 
     def create_fleet(self, ai_game):
         alien = Alien(self)
@@ -193,7 +221,8 @@ class AlienInvasion:
             # Pause
             sleep(0.5)
         else:
-            self.game_active = False
+            self.stats.game_active = False
+            pygame.mouse.set_visible(True)
 
     def _check_aliens_bottom(self):
         """Check if any aliens have reached the bottom of the screen"""
@@ -203,6 +232,28 @@ class AlienInvasion:
                 # Treat this the same as if the ship got hit
                 self._ship_hit()
                 break
+
+    def _check_play_button(self, mouse_pos):
+        """Start a new game when the player clicks Play"""
+        button_clicked = self.play_button.rect.collidepoint(mouse_pos)
+        if button_clicked and not self.stats.game_active:
+            # Reset the game settings
+            self.stats.reset_stats()
+            self.stats.game_active = True
+            self.sb.prep_score()
+
+            # Hide the mouse cursor
+            pygame.mouse.set_visible(False)
+
+            # Get rid of any remaining aliens and bullets
+            self.aliens.empty()
+            self.bullets.empty()
+
+            # Create a new fleet and center the ship
+            self.create_fleet(self)
+            self.ship.center_ship()
+
+            self.settings.initialize_dynamic_settings()
 
 
 if __name__ == '__main__':
